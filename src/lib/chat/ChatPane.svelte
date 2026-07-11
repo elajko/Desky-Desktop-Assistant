@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { chatStore } from "../stores/chat.svelte";
+  import { chatStore, type ChatPhase } from "../stores/chat.svelte";
   import MessageBubble from "./MessageBubble.svelte";
+
+  const PHASE_ICONS: Record<ChatPhase, string> = {
+    waking_up: "🌅",
+    calling_tool: "🔨",
+    thinking: "💭",
+  };
 
   let input = $state("");
 
@@ -19,7 +25,17 @@
       <MessageBubble role={message.role} content={message.content} />
     {/each}
     {#if chatStore.streaming}
-      <MessageBubble role="assistant" content={chatStore.streamingText || "…"} />
+      {#if chatStore.streamingText}
+        <MessageBubble role="assistant" content={chatStore.streamingText} />
+      {:else}
+        <p class="phase-trail">
+          {#each chatStore.phaseSteps as step}
+            <span class="phase-icon" title={step.toolName ?? step.phase}>
+              {PHASE_ICONS[step.phase]}
+            </span>
+          {/each}
+        </p>
+      {/if}
     {/if}
   </div>
 
@@ -80,5 +96,28 @@
   .error {
     color: #c0392b;
     font-size: 0.9rem;
+  }
+  .phase-trail {
+    align-self: flex-start;
+    padding: 0.6rem 0.9rem;
+    margin: 0;
+    display: flex;
+    gap: 0.4rem;
+  }
+  .phase-icon {
+    font-size: 1.3rem;
+    line-height: 1;
+    opacity: 0.6;
+    animation: phase-pop 0.25s ease-out;
+  }
+  @keyframes phase-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 0.6;
+      transform: scale(1);
+    }
   }
 </style>

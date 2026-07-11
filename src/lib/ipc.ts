@@ -33,3 +33,7 @@ export function saveSettings(settings: Settings): Promise<void> {
 export function onChatDelta(callback: (delta: string) => void): Promise<UnlistenFn> {
   return listen<string>("chat-delta", (event) => callback(event.payload));
 }
+
+export function onChatStatus(callback: (status: string) => void): Promise<UnlistenFn> {
+  return listen<string>("chat-status", (event) => callback(event.payload));
+}

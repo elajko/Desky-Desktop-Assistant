@@ -136,20 +136,24 @@ impl LlmProcess {
             return;
         };
 
+        // Try a graceful SIGTERM first if we can get the pid, but — unlike
+        // before — the forceful kill()+wait() fallback below always runs
+        // regardless of whether id() gave us a pid. child.id() can return
+        // None even for a still-running child; previously that silently
+        // skipped killing the process entirely, orphaning llama-server.
         #[cfg(unix)]
         if let Some(pid) = child.id() {
             unsafe {
                 libc::kill(pid as i32, libc::SIGTERM);
             }
-            let graceful = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
-            if graceful.is_err() {
-                let _ = child.kill().await;
-            }
         }
 
-        #[cfg(not(unix))]
+        if tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .is_err()
         {
             let _ = child.kill().await;
+            let _ = child.wait().await;
         }
 
         self.status = LlmStatus::Stopped;
@@ -164,4 +168,65 @@ fn pick_port(preferred: u16) -> u16 {
         .and_then(|l| l.local_addr())
         .map(|addr| addr.port())
         .unwrap_or(preferred)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Settings;
+    use std::path::PathBuf;
+
+    fn llama_server_process_alive(port: u16) -> bool {
+        let output = std::process::Command::new("pgrep")
+            .arg("-f")
+            .arg(format!("llama-server.*--port {port}"))
+            .output()
+            .expect("pgrep should run");
+        !output.stdout.is_empty()
+    }
+
+    /// Repro + regression test for the orphaned llama-server bug: shutdown()
+    /// used to only attempt to kill the child inside `if let Some(pid) =
+    /// child.id()`, silently doing nothing if id() returned None for a still
+    /// -running child. This drives the real spawn -> shutdown path and
+    /// checks the OS process list directly, independent of whatever made
+    /// id() return None in the field.
+    /// Run with: cargo test --lib -- --ignored --nocapture shutdown_always_kills_llama_server
+    #[ignore]
+    #[tokio::test]
+    async fn shutdown_always_kills_llama_server() {
+        let settings = Settings {
+            llama_server_path: Some(PathBuf::from(
+                "/home/erik/llama.cpp/build/bin/llama-server",
+            )),
+            model_path: Some(PathBuf::from(
+                "/home/erik/models/qwen2.5-3b-instruct-q4_k_m.gguf",
+            )),
+            port: 8097,
+            context_size: 4096,
+        };
+
+        let mut llm = LlmProcess::default();
+        let port = llm
+            .ensure_running(&settings)
+            .await
+            .expect("llama-server should start");
+
+        assert!(
+            llama_server_process_alive(port),
+            "llama-server should be running on port {port} right after ensure_running"
+        );
+
+        llm.shutdown().await;
+
+        // Give the OS a moment to actually reap the process after kill.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        assert!(
+            !llama_server_process_alive(port),
+            "llama-server on port {port} should be gone after shutdown(), but it's still running (orphan bug)"
+        );
+
+        println!("PASS: llama-server on port {port} was fully terminated by shutdown()");
+    }
 }

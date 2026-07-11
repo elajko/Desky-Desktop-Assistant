@@ -1,6 +1,7 @@
 use crate::config::Settings;
 use crate::llm::client::ChatMessage;
 use crate::llm::process::LlmProcess;
+use crate::tools::ToolRegistry;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -9,6 +10,7 @@ pub struct AppState {
     pub llm: Arc<Mutex<LlmProcess>>,
     pub history: Arc<Mutex<Vec<ChatMessage>>>,
     pub settings: Arc<Mutex<Settings>>,
+    pub tools: ToolRegistry,
     pub app_data_dir: PathBuf,
 }
 
@@ -19,6 +21,7 @@ impl AppState {
             llm: Arc::new(Mutex::new(LlmProcess::default())),
             history: Arc::new(Mutex::new(crate::llm::chat_loop::new_conversation())),
             settings: Arc::new(Mutex::new(settings)),
+            tools: ToolRegistry::new(),
             app_data_dir,
         }
     }

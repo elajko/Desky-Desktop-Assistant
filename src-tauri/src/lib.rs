@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod llm;
 mod state;
+mod tools;
 
 use state::AppState;
 use std::time::Duration;
