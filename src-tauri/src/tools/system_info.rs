@@ -14,7 +14,13 @@ impl Tool for GetSystemInfoTool {
     }
 
     fn description(&self) -> &'static str {
-        "Get information about the host machine: operating system, kernel version, CPU, total/used RAM, and disk usage."
+        "Get information about the host machine: operating system, kernel version, CPU, total/used RAM, and disk usage. \
+         The result is shown to the user directly in a panel, not as text you generate — after calling this, just \
+         briefly acknowledge you're pulling it up (e.g. \"Here's your system info!\"). Don't restate the specific values."
+    }
+
+    fn is_display_panel(&self) -> bool {
+        true
     }
 
     fn parameters_schema(&self) -> Value {

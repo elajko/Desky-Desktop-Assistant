@@ -168,6 +168,7 @@ mod tests {
                 |_| {},
                 |_| {},
                 |segment| println!("REPLY: {segment}"),
+                |tool, data| println!("PANEL ({tool}): {data:#}"),
             )
             .await
             .expect("chat turn should succeed");

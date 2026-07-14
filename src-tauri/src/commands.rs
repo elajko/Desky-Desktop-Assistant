@@ -29,6 +29,7 @@ pub async fn send_chat_message(
     let app_for_delta = app.clone();
     let app_for_phase = app.clone();
     let app_for_message = app.clone();
+    let app_for_panel = app.clone();
     crate::llm::chat_loop::run_chat_turn(
         port,
         &mut history,
@@ -46,6 +47,12 @@ pub async fn send_chat_message(
         },
         move |segment| {
             let _ = app_for_message.emit("chat-message-complete", segment);
+        },
+        move |tool, data| {
+            let _ = app_for_panel.emit(
+                "chat-panel",
+                serde_json::json!({ "tool": tool, "data": data }),
+            );
         },
     )
     .await

@@ -1,9 +1,24 @@
-import { sendChatMessage, onChatDelta, onChatStatus, onChatMessageComplete } from "../ipc";
+import {
+  sendChatMessage,
+  onChatDelta,
+  onChatStatus,
+  onChatMessageComplete,
+  onChatPanel,
+} from "../ipc";
 
-export interface ChatUiMessage {
+export interface ChatTextMessage {
+  kind: "text";
   role: "user" | "assistant";
   content: string;
 }
+
+export interface ChatPanelMessage {
+  kind: "panel";
+  tool: string;
+  data: unknown;
+}
+
+export type ChatUiMessage = ChatTextMessage | ChatPanelMessage;
 
 export type ChatPhase = "waking_up" | "thinking" | "calling_tool";
 
@@ -55,7 +70,7 @@ class ChatStore {
     if (!userText.trim() || this.streaming) return;
 
     this.error = null;
-    this.messages.push({ role: "user", content: userText });
+    this.messages.push({ kind: "text", role: "user", content: userText });
     this.streaming = true;
     this.streamingText = "";
     this.#revealTarget = "";
@@ -88,9 +103,15 @@ class ChatStore {
     // it's complete, rather than one growing bubble that later gets
     // silently replaced by just the final text.
     const unlistenMessageComplete = await onChatMessageComplete((segment) => {
-      this.messages.push({ role: "assistant", content: segment });
+      this.messages.push({ kind: "text", role: "assistant", content: segment });
       this.streamingText = "";
       this.#revealTarget = "";
+    });
+    // Some tools (e.g. get_system_info) render as a hardcoded panel instead
+    // of being narrated by the model — see Tool::is_display_panel on the
+    // backend. The model never even sees the real values for these.
+    const unlistenPanel = await onChatPanel((panel) => {
+      this.messages.push({ kind: "panel", tool: panel.tool, data: panel.data });
     });
 
     try {
@@ -101,6 +122,7 @@ class ChatStore {
       unlistenDelta();
       unlistenStatus();
       unlistenMessageComplete();
+      unlistenPanel();
       this.#stopReveal();
       this.streaming = false;
       this.streamingText = "";

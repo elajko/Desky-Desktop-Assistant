@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { fly } from "svelte/transition";
   import { chatStore } from "../stores/chat.svelte";
   import MessageBubble from "./MessageBubble.svelte";
   import PhaseIcon from "./PhaseIcon.svelte";
+  import SystemInfoPanel from "./SystemInfoPanel.svelte";
+  import type { SystemInfoData } from "../ipc";
 
   let input = $state("");
 
@@ -17,7 +20,11 @@
 <div class="chat-pane">
   <div class="messages">
     {#each chatStore.messages as message}
-      <MessageBubble role={message.role} content={message.content} />
+      {#if message.kind === "text"}
+        <MessageBubble role={message.role} content={message.content} />
+      {:else if message.tool === "get_system_info"}
+        <SystemInfoPanel data={message.data as SystemInfoData} />
+      {/if}
     {/each}
     {#if chatStore.streaming}
       {#if chatStore.streamingText}
@@ -58,14 +65,16 @@
     <p class="error">{chatStore.error}</p>
   {/if}
 
-  <form class="composer" onsubmit={handleSubmit}>
-    <input
-      bind:value={input}
-      placeholder="Ask Desky anything…"
-      disabled={chatStore.streaming}
-    />
-    <button type="submit" disabled={chatStore.streaming || !input.trim()}>Send</button>
-  </form>
+  {#if !chatStore.streaming}
+    <form
+      class="composer"
+      onsubmit={handleSubmit}
+      transition:fly={{ y: 40, duration: 220 }}
+    >
+      <input bind:value={input} placeholder="Ask Desky anything…" />
+      <button type="submit" disabled={!input.trim()}>Send</button>
+    </form>
+  {/if}
 </div>
 
 <style>

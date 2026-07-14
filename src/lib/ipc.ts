@@ -34,6 +34,29 @@ export type LlmStatus =
   | { state: "ready" }
   | { state: "crashed"; message: string };
 
+export interface DiskInfo {
+  mount_point: string;
+  total_bytes: number;
+  available_bytes: number;
+}
+
+export interface SystemInfoData {
+  os_name: string;
+  os_version: string;
+  kernel_version: string;
+  host_name: string;
+  cpu_brand: string;
+  cpu_count: number;
+  total_memory_bytes: number;
+  used_memory_bytes: number;
+  disks: DiskInfo[];
+}
+
+export interface ChatPanelEvent {
+  tool: string;
+  data: unknown;
+}
+
 export function sendChatMessage(message: string): Promise<void> {
   return invoke("send_chat_message", { message });
 }
@@ -60,6 +83,10 @@ export function onChatStatus(callback: (status: string) => void): Promise<Unlist
 
 export function onChatMessageComplete(callback: (segment: string) => void): Promise<UnlistenFn> {
   return listen<string>("chat-message-complete", (event) => callback(event.payload));
+}
+
+export function onChatPanel(callback: (panel: ChatPanelEvent) => void): Promise<UnlistenFn> {
+  return listen<ChatPanelEvent>("chat-panel", (event) => callback(event.payload));
 }
 
 export function listPersonas(): Promise<Persona[]> {

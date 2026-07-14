@@ -24,6 +24,17 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &'static str;
     fn parameters_schema(&self) -> Value;
     fn execute(&self, args: Value) -> Result<Value, ToolError>;
+
+    /// If true, this tool's real result is never fed back into the model's
+    /// context — only a placeholder acknowledgment is. The actual result
+    /// goes straight to the frontend instead, to render as a hardcoded
+    /// panel (keyed by this tool's `name()`). Keeps precise data out of the
+    /// model's context (faster, smaller model can't garble numbers it never
+    /// sees) while still showing the user the real thing, deterministically
+    /// rendered rather than narrated.
+    fn is_display_panel(&self) -> bool {
+        false
+    }
 }
 
 pub struct ToolRegistry {
