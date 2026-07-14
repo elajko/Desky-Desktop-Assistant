@@ -155,15 +155,22 @@ mod tests {
 
         for persona in [&concise, &snarky] {
             let mut history = new_conversation(&persona.compose_system_prompt());
-            let reply = run_chat_turn(port, &mut history, &tools, question.to_string(), |_| {}, |_| {})
-                .await
-                .expect("chat turn should succeed");
             println!(
-                "\n=== PERSONA: {} ===\nSYSTEM PROMPT: {}\nREPLY: {}\n",
+                "\n=== PERSONA: {} ===\nSYSTEM PROMPT: {}",
                 persona.name,
-                persona.compose_system_prompt(),
-                reply
+                persona.compose_system_prompt()
             );
+            run_chat_turn(
+                port,
+                &mut history,
+                &tools,
+                question.to_string(),
+                |_| {},
+                |_| {},
+                |segment| println!("REPLY: {segment}"),
+            )
+            .await
+            .expect("chat turn should succeed");
         }
 
         llm.shutdown().await;

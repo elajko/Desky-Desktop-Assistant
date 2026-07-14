@@ -28,6 +28,7 @@
     --accent-text: #ffffff;
     --border: #4a4a4a;
     --danger: #e0554a;
+    --success: #4caf50;
 
     color: var(--text);
     background-color: var(--bg);

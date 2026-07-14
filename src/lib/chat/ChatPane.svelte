@@ -25,9 +25,28 @@
       {/if}
       {#if chatStore.phaseSteps.length > 0}
         <p class="phase-trail">
-          {#each chatStore.phaseSteps as step}
-            <span class="phase-icon" title={step.toolName ?? step.phase}>
+          {#each chatStore.phaseSteps as step, i}
+            {@const isActive = i === chatStore.phaseSteps.length - 1}
+            <span
+              class="phase-icon"
+              class:active={isActive}
+              title={step.toolName ?? step.phase}
+            >
               <PhaseIcon phase={step.phase} />
+              {#if !isActive}
+                <span class="phase-check">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+              {/if}
             </span>
           {/each}
         </p>
@@ -104,10 +123,38 @@
     gap: 0.4rem;
   }
   .phase-icon {
+    position: relative;
     display: flex;
     color: var(--text-muted);
     opacity: 0.85;
     animation: phase-pop 0.25s ease-out;
+  }
+  .phase-icon:not(.active) {
+    color: var(--success);
+  }
+  .phase-icon.active {
+    animation:
+      phase-pop 0.25s ease-out,
+      phase-wobble 1.4s ease-in-out 0.25s infinite,
+      phase-pulse 2.8s ease-in-out 0.25s infinite;
+  }
+  .phase-check {
+    position: absolute;
+    bottom: -0.15rem;
+    right: -0.35rem;
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--success);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: phase-check-pop 0.2s ease-out;
+  }
+  .phase-check svg {
+    width: 0.65rem;
+    height: 0.65rem;
   }
   @keyframes phase-pop {
     from {
@@ -117,6 +164,34 @@
     to {
       opacity: 0.85;
       transform: scale(1);
+    }
+  }
+  @keyframes phase-check-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes phase-wobble {
+    0%,
+    100% {
+      transform: rotate(-8deg);
+    }
+    50% {
+      transform: rotate(8deg);
+    }
+  }
+  @keyframes phase-pulse {
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
     }
   }
 </style>

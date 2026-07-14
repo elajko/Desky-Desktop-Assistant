@@ -10,7 +10,7 @@ pub async fn send_chat_message(
     app: AppHandle,
     state: State<'_, AppState>,
     message: String,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let settings = state.settings.lock().await.clone();
 
     let already_ready = { state.llm.lock().await.status == LlmStatus::Ready };
@@ -28,7 +28,8 @@ pub async fn send_chat_message(
     let mut history = state.history.lock().await;
     let app_for_delta = app.clone();
     let app_for_phase = app.clone();
-    let reply = crate::llm::chat_loop::run_chat_turn(
+    let app_for_message = app.clone();
+    crate::llm::chat_loop::run_chat_turn(
         port,
         &mut history,
         &state.tools,
@@ -43,11 +44,14 @@ pub async fn send_chat_message(
             };
             let _ = app_for_phase.emit("chat-status", status);
         },
+        move |segment| {
+            let _ = app_for_message.emit("chat-message-complete", segment);
+        },
     )
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(reply)
+    Ok(())
 }
 
 #[tauri::command]

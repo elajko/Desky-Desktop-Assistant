@@ -34,7 +34,7 @@ export type LlmStatus =
   | { state: "ready" }
   | { state: "crashed"; message: string };
 
-export function sendChatMessage(message: string): Promise<string> {
+export function sendChatMessage(message: string): Promise<void> {
   return invoke("send_chat_message", { message });
 }
 
@@ -56,6 +56,10 @@ export function onChatDelta(callback: (delta: string) => void): Promise<Unlisten
 
 export function onChatStatus(callback: (status: string) => void): Promise<UnlistenFn> {
   return listen<string>("chat-status", (event) => callback(event.payload));
+}
+
+export function onChatMessageComplete(callback: (segment: string) => void): Promise<UnlistenFn> {
+  return listen<string>("chat-message-complete", (event) => callback(event.payload));
 }
 
 export function listPersonas(): Promise<Persona[]> {

@@ -1,4 +1,4 @@
-use super::client::{self, ChatMessage, StreamOutcome};
+use super::client::{self, ChatMessage};
 use crate::tools::ToolRegistry;
 
 const MAX_TOOL_ITERATIONS: usize = 4;
@@ -21,9 +21,14 @@ pub fn new_conversation(system_prompt: &str) -> Vec<ChatMessage> {
 /// Appends the user's message to history, then drives the tool-calling loop:
 /// streams a completion, and if the model requests tool calls, dispatches
 /// them against `tools` and feeds the results back for another turn, up to
-/// `MAX_TOOL_ITERATIONS` times. Streams assistant *text* deltas to `on_delta`
-/// as they arrive, and phase changes (thinking vs. calling a tool) to
-/// `on_phase`. Returns the final assistant reply text.
+/// `MAX_TOOL_ITERATIONS` times.
+///
+/// A single iteration can produce text *and* a tool-call request together
+/// (e.g. "let me check that for you..." alongside calling get_system_info).
+/// Each iteration's text, if any, is a complete, standalone message segment
+/// — `on_message_complete` fires once per segment, in order, so the frontend
+/// can render each as its own permanent bubble rather than concatenating
+/// everything (or losing earlier segments) into one.
 pub async fn run_chat_turn(
     port: u16,
     history: &mut Vec<ChatMessage>,
@@ -31,31 +36,39 @@ pub async fn run_chat_turn(
     user_message: String,
     mut on_delta: impl FnMut(&str),
     mut on_phase: impl FnMut(ChatPhase),
-) -> anyhow::Result<String> {
+    mut on_message_complete: impl FnMut(&str),
+) -> anyhow::Result<()> {
     history.push(ChatMessage::user(user_message));
 
     let tool_schemas = tools.to_openai_schema();
 
     for _ in 0..MAX_TOOL_ITERATIONS {
         on_phase(ChatPhase::Thinking);
-        let outcome = client::stream_chat(port, history, &tool_schemas, &mut on_delta).await?;
+        let result = client::stream_chat(port, history, &tool_schemas, &mut on_delta).await?;
 
-        match outcome {
-            StreamOutcome::Message(text) => {
-                history.push(ChatMessage::assistant(text.clone()));
-                return Ok(text);
+        if result.tool_calls.is_empty() {
+            history.push(ChatMessage::assistant(result.content.clone()));
+            if !result.content.is_empty() {
+                on_message_complete(&result.content);
             }
-            StreamOutcome::ToolCalls(calls) => {
-                history.push(ChatMessage::assistant_tool_calls(calls.clone()));
+            return Ok(());
+        }
 
-                for call in calls {
-                    on_phase(ChatPhase::CallingTool {
-                        name: call.name.clone(),
-                    });
-                    let result = dispatch_tool_call(tools, &call.name, &call.arguments);
-                    history.push(ChatMessage::tool_result(call.id, result));
-                }
-            }
+        if !result.content.is_empty() {
+            on_message_complete(&result.content);
+        }
+        let content = (!result.content.is_empty()).then_some(result.content);
+        history.push(ChatMessage::assistant_tool_calls(
+            content,
+            result.tool_calls.clone(),
+        ));
+
+        for call in result.tool_calls {
+            on_phase(ChatPhase::CallingTool {
+                name: call.name.clone(),
+            });
+            let tool_result = dispatch_tool_call(tools, &call.name, &call.arguments);
+            history.push(ChatMessage::tool_result(call.id, tool_result));
         }
     }
 
@@ -117,7 +130,7 @@ mod tests {
              questions about it — never guess or make up system details when a tool can tell you.",
         );
 
-        let reply = run_chat_turn(
+        run_chat_turn(
             port,
             &mut history,
             &tools,
@@ -126,11 +139,11 @@ mod tests {
                 .to_string(),
             |_delta| {},
             |_phase| {},
+            |segment| println!("=== MESSAGE SEGMENT ===\n{segment}\n======================="),
         )
         .await
         .expect("chat turn should succeed");
 
-        println!("=== MODEL REPLY ===\n{reply}\n===================");
         println!("=== FULL HISTORY ===\n{:#?}\n====================", history);
 
         llm.shutdown().await;
@@ -174,17 +187,18 @@ mod tests {
             "can u make an ascii art of a cat",
             "what OS am i on",
         ] {
-            let reply = run_chat_turn(
+            println!("=== USER: {turn}");
+            run_chat_turn(
                 port,
                 &mut history,
                 &tools,
                 turn.to_string(),
                 |_| {},
                 |_| {},
+                |segment| println!("=== DESKY SEGMENT: {segment}"),
             )
             .await
             .expect("chat turn should succeed");
-            println!("=== USER: {turn}\n=== DESKY: {reply}\n");
         }
 
         println!("=== FULL HISTORY ===\n{:#?}\n====================", history);

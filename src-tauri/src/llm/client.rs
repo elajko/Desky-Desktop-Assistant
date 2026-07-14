@@ -27,10 +27,14 @@ impl ChatMessage {
         Self::plain("assistant", text)
     }
 
-    pub fn assistant_tool_calls(calls: Vec<ToolCall>) -> Self {
+    /// An assistant turn that requested tool calls, optionally with text the
+    /// model produced before/alongside the request (e.g. "let me check...").
+    /// Mirrors the real OpenAI wire shape, which allows content and
+    /// tool_calls on the same message.
+    pub fn assistant_tool_calls(content: Option<String>, calls: Vec<ToolCall>) -> Self {
         Self {
             role: "assistant".to_string(),
-            content: None,
+            content,
             tool_calls: Some(
                 calls
                     .into_iter()
@@ -89,10 +93,12 @@ pub struct ToolCall {
     pub arguments: String,
 }
 
-/// What a streamed turn resolved to once the stream ended.
-pub enum StreamOutcome {
-    Message(String),
-    ToolCalls(Vec<ToolCall>),
+/// What a single streamed completion produced. A response can contain both:
+/// text (e.g. "let me check that for you...") and a request to call tools,
+/// in the same completion.
+pub struct StreamResult {
+    pub content: String,
+    pub tool_calls: Vec<ToolCall>,
 }
 
 #[derive(Debug, Serialize)]
@@ -157,15 +163,14 @@ struct PartialToolCall {
 
 /// Streams a chat completion from llama-server's OpenAI-compatible endpoint.
 /// Calls `on_delta` for every incremental piece of assistant *text* as it
-/// arrives (tool-call argument fragments are not forwarded to it). Resolves
-/// to either the fully accumulated assistant message or the fully assembled
-/// set of tool calls the model requested.
+/// arrives (tool-call argument fragments are not forwarded to it). Returns
+/// both the accumulated text (may be empty) and any tool calls requested.
 pub async fn stream_chat(
     port: u16,
     messages: &[ChatMessage],
     tools: &[Value],
     mut on_delta: impl FnMut(&str),
-) -> anyhow::Result<StreamOutcome> {
+) -> anyhow::Result<StreamResult> {
     let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
     let client = reqwest::Client::new();
     let body = ChatCompletionRequest {
@@ -241,17 +246,17 @@ pub async fn stream_chat(
         }
     }
 
-    if !tool_calls_acc.is_empty() {
-        let calls = tool_calls_acc
-            .into_values()
-            .map(|p| ToolCall {
-                id: p.id,
-                name: p.name,
-                arguments: p.arguments,
-            })
-            .collect();
-        return Ok(StreamOutcome::ToolCalls(calls));
-    }
+    let tool_calls = tool_calls_acc
+        .into_values()
+        .map(|p| ToolCall {
+            id: p.id,
+            name: p.name,
+            arguments: p.arguments,
+        })
+        .collect();
 
-    Ok(StreamOutcome::Message(content_acc))
+    Ok(StreamResult {
+        content: content_acc,
+        tool_calls,
+    })
 }
