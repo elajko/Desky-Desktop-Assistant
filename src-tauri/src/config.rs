@@ -7,6 +7,8 @@ pub struct Settings {
     pub model_path: Option<PathBuf>,
     pub port: u16,
     pub context_size: u32,
+    #[serde(default)]
+    pub active_persona_id: Option<String>,
 }
 
 impl Default for Settings {
@@ -16,6 +18,7 @@ impl Default for Settings {
             model_path: None,
             port: 8090,
             context_size: 4096,
+            active_persona_id: None,
         }
     }
 }

@@ -1,12 +1,7 @@
 <script lang="ts">
-  import { chatStore, type ChatPhase } from "../stores/chat.svelte";
+  import { chatStore } from "../stores/chat.svelte";
   import MessageBubble from "./MessageBubble.svelte";
-
-  const PHASE_ICONS: Record<ChatPhase, string> = {
-    waking_up: "🌅",
-    calling_tool: "🔨",
-    thinking: "💭",
-  };
+  import PhaseIcon from "./PhaseIcon.svelte";
 
   let input = $state("");
 
@@ -27,11 +22,12 @@
     {#if chatStore.streaming}
       {#if chatStore.streamingText}
         <MessageBubble role="assistant" content={chatStore.streamingText} />
-      {:else}
+      {/if}
+      {#if chatStore.phaseSteps.length > 0}
         <p class="phase-trail">
           {#each chatStore.phaseSteps as step}
             <span class="phase-icon" title={step.toolName ?? step.phase}>
-              {PHASE_ICONS[step.phase]}
+              <PhaseIcon phase={step.phase} />
             </span>
           {/each}
         </p>
@@ -61,6 +57,7 @@
     max-width: 640px;
     margin: 0 auto;
     padding: 1rem;
+    padding-top: 3rem;
     box-sizing: border-box;
   }
   .messages {
@@ -79,14 +76,16 @@
     flex: 1;
     padding: 0.6rem 0.8rem;
     border-radius: 8px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
   }
   .composer button {
     padding: 0.6rem 1.2rem;
     border-radius: 8px;
     border: none;
-    background: #396cd8;
-    color: white;
+    background: var(--accent);
+    color: var(--accent-text);
     cursor: pointer;
   }
   .composer button:disabled {
@@ -94,7 +93,7 @@
     cursor: not-allowed;
   }
   .error {
-    color: #c0392b;
+    color: var(--danger);
     font-size: 0.9rem;
   }
   .phase-trail {
@@ -105,9 +104,9 @@
     gap: 0.4rem;
   }
   .phase-icon {
-    font-size: 1.3rem;
-    line-height: 1;
-    opacity: 0.6;
+    display: flex;
+    color: var(--text-muted);
+    opacity: 0.85;
     animation: phase-pop 0.25s ease-out;
   }
   @keyframes phase-pop {
@@ -116,7 +115,7 @@
       transform: scale(0.5);
     }
     to {
-      opacity: 0.6;
+      opacity: 0.85;
       transform: scale(1);
     }
   }

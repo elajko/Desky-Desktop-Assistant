@@ -1,11 +1,6 @@
 use super::client::{self, ChatMessage, StreamOutcome};
 use crate::tools::ToolRegistry;
 
-// Hardcoded for M1/M2; replaced by the persona system's composed prompt in M3.
-const SYSTEM_PROMPT: &str = "You are Desky, a friendly and concise local desktop assistant. \
-    You can call tools to look up real information about the host system before answering \
-    questions about it — never guess or make up system details when a tool can tell you.";
-
 const MAX_TOOL_ITERATIONS: usize = 4;
 
 /// What Desky is doing right now, for the frontend to reflect back to the
@@ -17,8 +12,10 @@ pub enum ChatPhase {
     CallingTool { name: String },
 }
 
-pub fn new_conversation() -> Vec<ChatMessage> {
-    vec![ChatMessage::system(SYSTEM_PROMPT)]
+/// Starts a fresh conversation with the given (already-composed) system
+/// prompt — normally the active persona's `compose_system_prompt()`.
+pub fn new_conversation(system_prompt: &str) -> Vec<ChatMessage> {
+    vec![ChatMessage::system(system_prompt)]
 }
 
 /// Appends the user's message to history, then drives the tool-calling loop:
@@ -104,6 +101,7 @@ mod tests {
             )),
             port: 8095,
             context_size: 4096,
+            active_persona_id: None,
         };
 
         let mut llm = LlmProcess::default();
@@ -113,7 +111,11 @@ mod tests {
             .expect("llama-server should start");
 
         let tools = ToolRegistry::new();
-        let mut history = new_conversation();
+        let mut history = new_conversation(
+            "You are Desky, a friendly and concise local desktop assistant. You can call \
+             tools to look up real information about the host system before answering \
+             questions about it — never guess or make up system details when a tool can tell you.",
+        );
 
         let reply = run_chat_turn(
             port,
@@ -151,6 +153,7 @@ mod tests {
             )),
             port: 8096,
             context_size: 4096,
+            active_persona_id: None,
         };
 
         let mut llm = LlmProcess::default();
@@ -160,7 +163,11 @@ mod tests {
             .expect("llama-server should start");
 
         let tools = ToolRegistry::new();
-        let mut history = new_conversation();
+        let mut history = new_conversation(
+            "You are Desky, a friendly and concise local desktop assistant. You can call \
+             tools to look up real information about the host system before answering \
+             questions about it — never guess or make up system details when a tool can tell you.",
+        );
 
         for turn in [
             "omg hi desky",

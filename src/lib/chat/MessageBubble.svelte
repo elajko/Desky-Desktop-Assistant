@@ -15,12 +15,12 @@
   }
   .bubble.user {
     align-self: flex-end;
-    background: #396cd8;
-    color: white;
+    background: var(--accent);
+    color: var(--accent-text);
   }
   .bubble.assistant {
     align-self: flex-start;
-    background: #ececec;
-    color: #0f0f0f;
+    background: var(--bg-elevated);
+    color: var(--text);
   }
 </style>

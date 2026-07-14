@@ -204,6 +204,7 @@ mod tests {
             )),
             port: 8097,
             context_size: 4096,
+            active_persona_id: None,
         };
 
         let mut llm = LlmProcess::default();

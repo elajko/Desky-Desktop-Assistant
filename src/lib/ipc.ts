@@ -6,6 +6,26 @@ export interface Settings {
   model_path: string | null;
   port: number;
   context_size: number;
+  active_persona_id: string | null;
+}
+
+export interface PersonaTraits {
+  formality: number;
+  humor: number;
+  verbosity: number;
+  proactivity: number;
+}
+
+export interface Persona {
+  id: string;
+  name: string;
+  description: string;
+  system_prompt: string;
+  traits: PersonaTraits;
+  // Placeholder for the future avatar system (spritesheet-based) — not read
+  // or rendered anywhere yet.
+  sprite_sheet: string | null;
+  is_builtin: boolean;
 }
 
 export type LlmStatus =
@@ -36,4 +56,24 @@ export function onChatDelta(callback: (delta: string) => void): Promise<Unlisten
 
 export function onChatStatus(callback: (status: string) => void): Promise<UnlistenFn> {
   return listen<string>("chat-status", (event) => callback(event.payload));
+}
+
+export function listPersonas(): Promise<Persona[]> {
+  return invoke("list_personas");
+}
+
+export function savePersona(persona: Persona): Promise<void> {
+  return invoke("save_persona", { persona });
+}
+
+export function deletePersona(id: string): Promise<void> {
+  return invoke("delete_persona", { id });
+}
+
+export function setActivePersona(id: string): Promise<void> {
+  return invoke("set_active_persona", { id });
+}
+
+export function resetPersona(id: string): Promise<Persona> {
+  return invoke("reset_persona", { id });
 }
