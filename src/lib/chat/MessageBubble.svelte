@@ -22,21 +22,21 @@
 
 <style>
   .bubble {
+    width: 100%;
+    box-sizing: border-box;
     padding: 0.6rem 0.9rem;
     border-radius: 12px;
-    max-width: 80%;
     white-space: pre-wrap;
     display: flex;
     align-items: flex-start;
     gap: 0.5rem;
   }
   .bubble.user {
-    align-self: flex-end;
-    background: var(--accent);
-    color: var(--accent-text);
+    background: transparent;
+    color: var(--text-muted);
+    font-style: italic;
   }
   .bubble.assistant {
-    align-self: flex-start;
     background: var(--bg-elevated);
     color: var(--text);
   }

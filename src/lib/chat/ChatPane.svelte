@@ -5,6 +5,7 @@
   import { personaStore } from "../stores/persona.svelte";
   import MessageBubble from "./MessageBubble.svelte";
   import PhaseIcon from "./PhaseIcon.svelte";
+  import AvatarStage from "../avatar/AvatarStage.svelte";
 
   onMount(() => {
     if (!personaStore.loaded) personaStore.load();
@@ -15,6 +16,20 @@
   );
 
   let input = $state("");
+  let messagesEl: HTMLDivElement | undefined = $state();
+
+  // Newest message at the top, sinking down (and eventually fading behind
+  // the avatar) as the conversation goes on.
+  let reversedMessages = $derived([...chatStore.messages].reverse());
+
+  // Keep the view pinned to the top as messages arrive or stream in, since
+  // the newest content is always inserted there.
+  $effect(() => {
+    chatStore.messages.length;
+    chatStore.streamingText;
+    chatStore.phase;
+    if (messagesEl) messagesEl.scrollTop = 0;
+  });
 
   async function handleSubmit(event: Event) {
     event.preventDefault();
@@ -35,23 +50,35 @@
 </div>
 
 <div class="chat-pane">
-  <div class="messages">
-    {#each chatStore.messages as message}
-      <MessageBubble role={message.role} content={message.content} sentiment={message.sentiment} />
-    {/each}
-    {#if chatStore.streaming}
-      {#if chatStore.streamingText}
-        <MessageBubble
-          role="assistant"
-          content={chatStore.streamingText}
-          sentiment={chatStore.sentiment}
-        />
-      {:else if chatStore.phase}
-        <span class="phase-icon" title={chatStore.phase}>
-          <PhaseIcon phase={chatStore.phase} />
-        </span>
+  <div class="messages-wrapper">
+    <div class="messages" bind:this={messagesEl}>
+      {#if chatStore.streaming}
+        {#if chatStore.streamingText}
+          <MessageBubble
+            role="assistant"
+            content={chatStore.streamingText}
+            sentiment={chatStore.sentiment}
+          />
+        {:else if chatStore.phase}
+          <span class="phase-icon" title={chatStore.phase}>
+            <PhaseIcon phase={chatStore.phase} />
+          </span>
+        {/if}
       {/if}
-    {/if}
+      {#each reversedMessages as message}
+        <MessageBubble
+          role={message.role}
+          content={message.content}
+          sentiment={message.sentiment}
+        />
+      {/each}
+    </div>
+
+    <div class="fade-overlay"></div>
+
+    <div class="avatar-wrapper">
+      <AvatarStage />
+    </div>
   </div>
 
   {#if chatStore.error}
@@ -102,12 +129,36 @@
     padding-top: 3rem;
     box-sizing: border-box;
   }
-  .messages {
+  .messages-wrapper {
+    position: relative;
     flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .messages {
+    position: absolute;
+    inset: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+  .fade-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent 50%, var(--bg) 100%);
+  }
+  .avatar-wrapper {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    height: 190px;
+    z-index: 20;
+    pointer-events: none;
   }
   .composer {
     display: flex;
