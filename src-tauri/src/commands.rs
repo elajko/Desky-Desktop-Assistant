@@ -1,5 +1,4 @@
 use crate::config::Settings;
-use crate::llm::chat_loop::ChatPhase;
 use crate::llm::process::LlmStatus;
 use crate::persona::Persona;
 use crate::state::AppState;
@@ -10,7 +9,7 @@ pub async fn send_chat_message(
     app: AppHandle,
     state: State<'_, AppState>,
     message: String,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let settings = state.settings.lock().await.clone();
 
     let already_ready = { state.llm.lock().await.status == LlmStatus::Ready };
@@ -25,40 +24,38 @@ pub async fn send_chat_message(
             .map_err(|e| e.to_string())?
     };
 
+    // Judge the message against the active persona's likes/dislikes before
+    // replying, update (and persist) their love meter, and let the frontend
+    // know right away so it can style the upcoming reply bubble and update
+    // the meter display without waiting for the full response to stream in.
+    if let Some(mut persona) = state
+        .personas
+        .resolve_active(settings.active_persona_id.as_deref())
+        .map_err(|e| e.to_string())?
+    {
+        let sentiment = crate::llm::sentiment::classify_message(port, &persona, &message)
+            .await
+            .unwrap_or(crate::llm::sentiment::Sentiment::Neutral);
+
+        persona.love += sentiment.delta();
+        let _ = state.personas.save(&persona);
+
+        let _ = app.emit(
+            "chat-sentiment",
+            serde_json::json!({ "sentiment": sentiment.as_str(), "love": persona.love }),
+        );
+    }
+
+    let _ = app.emit("chat-status", "thinking");
+
     let mut history = state.history.lock().await;
-    let app_for_delta = app.clone();
-    let app_for_phase = app.clone();
-    let app_for_message = app.clone();
-    let app_for_panel = app.clone();
-    crate::llm::chat_loop::run_chat_turn(
-        port,
-        &mut history,
-        &state.tools,
-        message,
-        move |delta| {
-            let _ = app_for_delta.emit("chat-delta", delta);
-        },
-        move |phase| {
-            let status = match phase {
-                ChatPhase::Thinking => "thinking".to_string(),
-                ChatPhase::CallingTool { name } => format!("calling_tool:{name}"),
-            };
-            let _ = app_for_phase.emit("chat-status", status);
-        },
-        move |segment| {
-            let _ = app_for_message.emit("chat-message-complete", segment);
-        },
-        move |tool, data| {
-            let _ = app_for_panel.emit(
-                "chat-panel",
-                serde_json::json!({ "tool": tool, "data": data }),
-            );
-        },
-    )
+    let reply = crate::llm::chat_loop::run_chat_turn(port, &mut history, message, move |delta| {
+        let _ = app.emit("chat-delta", delta);
+    })
     .await
     .map_err(|e| e.to_string())?;
 
-    Ok(())
+    Ok(reply)
 }
 
 #[tauri::command]

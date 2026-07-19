@@ -1,31 +1,15 @@
-import {
-  sendChatMessage,
-  onChatDelta,
-  onChatStatus,
-  onChatMessageComplete,
-  onChatPanel,
-} from "../ipc";
+import { sendChatMessage, onChatDelta, onChatStatus, onChatSentiment, type Sentiment } from "../ipc";
+import { personaStore } from "./persona.svelte";
 
-export interface ChatTextMessage {
-  kind: "text";
+export interface ChatUiMessage {
   role: "user" | "assistant";
   content: string;
+  // Only ever set on assistant messages, reflecting the sentiment of the
+  // user message that prompted them — drives the bubble's love-meter styling.
+  sentiment?: Sentiment;
 }
 
-export interface ChatPanelMessage {
-  kind: "panel";
-  tool: string;
-  data: unknown;
-}
-
-export type ChatUiMessage = ChatTextMessage | ChatPanelMessage;
-
-export type ChatPhase = "waking_up" | "thinking" | "calling_tool";
-
-export interface PhaseStep {
-  phase: ChatPhase;
-  toolName?: string;
-}
+export type ChatPhase = "waking_up" | "thinking" | null;
 
 // Ticking a reveal buffer ourselves (rather than just showing whatever text
 // has arrived) is what gives a smooth letter-by-letter typewriter effect —
@@ -41,7 +25,11 @@ class ChatStore {
   messages = $state<ChatUiMessage[]>([]);
   streaming = $state(false);
   streamingText = $state("");
-  phaseSteps = $state<PhaseStep[]>([]);
+  phase = $state<ChatPhase>(null);
+  // Reactive so the live streaming-preview bubble can show the liked/
+  // disliked styling immediately too, not just the final pushed message —
+  // classification finishes well before the reply starts streaming in.
+  sentiment = $state<Sentiment | undefined>(undefined);
   error = $state<string | null>(null);
 
   // Full text received so far for the segment currently streaming, ahead of
@@ -70,64 +58,48 @@ class ChatStore {
     if (!userText.trim() || this.streaming) return;
 
     this.error = null;
-    this.messages.push({ kind: "text", role: "user", content: userText });
+    this.messages.push({ role: "user", content: userText });
     this.streaming = true;
     this.streamingText = "";
     this.#revealTarget = "";
-    this.phaseSteps = [];
+    this.phase = null;
+    this.sentiment = undefined;
     this.#startReveal();
 
     const unlistenDelta = await onChatDelta((delta) => {
       this.#revealTarget += delta;
-      // Icons only represent what's happening during a silent gap — the
-      // moment real output resumes, clear the trail so far. If there's
-      // another gap later (e.g. a further tool call), it starts a fresh
-      // trail from empty rather than piling up the whole turn's history.
-      this.phaseSteps = [];
+      // Once real output starts flowing, the phase indicator is no longer
+      // relevant for this turn.
+      this.phase = null;
     });
     const unlistenStatus = await onChatStatus((status) => {
-      const step: PhaseStep = status.startsWith("calling_tool:")
-        ? { phase: "calling_tool", toolName: status.slice("calling_tool:".length) }
-        : { phase: status as ChatPhase };
-
-      // Skip appending a duplicate if it's identical to the last step
-      // (same phase and tool), so we don't show e.g. two thought bubbles
-      // in a row for no visible reason.
-      const last = this.phaseSteps.at(-1);
-      if (last && last.phase === step.phase && last.toolName === step.toolName) return;
-
-      this.phaseSteps.push(step);
+      this.phase = status as ChatPhase;
     });
-    // Each segment (e.g. a "let me check that for you..." preamble, then
-    // later the real answer) becomes its own permanent bubble the moment
-    // it's complete, rather than one growing bubble that later gets
-    // silently replaced by just the final text.
-    const unlistenMessageComplete = await onChatMessageComplete((segment) => {
-      this.messages.push({ kind: "text", role: "assistant", content: segment });
-      this.streamingText = "";
-      this.#revealTarget = "";
-    });
-    // Some tools (e.g. get_system_info) render as a hardcoded panel instead
-    // of being narrated by the model — see Tool::is_display_panel on the
-    // backend. The model never even sees the real values for these.
-    const unlistenPanel = await onChatPanel((panel) => {
-      this.messages.push({ kind: "panel", tool: panel.tool, data: panel.data });
+
+    const unlistenSentiment = await onChatSentiment(({ sentiment, love }) => {
+      this.sentiment = sentiment;
+      // The persona objects personaStore already holds are the single
+      // source of truth for love values (so the number is right whichever
+      // view loaded them first) — just keep the active one in sync here.
+      const persona = personaStore.personas.find((p) => p.id === personaStore.activeId);
+      if (persona) persona.love = love;
     });
 
     try {
-      await sendChatMessage(userText);
+      const reply = await sendChatMessage(userText);
+      this.messages.push({ role: "assistant", content: reply, sentiment: this.sentiment });
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
     } finally {
       unlistenDelta();
       unlistenStatus();
-      unlistenMessageComplete();
-      unlistenPanel();
+      unlistenSentiment();
       this.#stopReveal();
       this.streaming = false;
       this.streamingText = "";
       this.#revealTarget = "";
-      this.phaseSteps = [];
+      this.phase = null;
+      this.sentiment = undefined;
     }
   }
 }

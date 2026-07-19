@@ -1,10 +1,18 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { fly } from "svelte/transition";
   import { chatStore } from "../stores/chat.svelte";
+  import { personaStore } from "../stores/persona.svelte";
   import MessageBubble from "./MessageBubble.svelte";
   import PhaseIcon from "./PhaseIcon.svelte";
-  import SystemInfoPanel from "./SystemInfoPanel.svelte";
-  import type { SystemInfoData } from "../ipc";
+
+  onMount(() => {
+    if (!personaStore.loaded) personaStore.load();
+  });
+
+  let love = $derived(
+    personaStore.personas.find((p) => p.id === personaStore.activeId)?.love ?? 0,
+  );
 
   let input = $state("");
 
@@ -17,46 +25,31 @@
   }
 </script>
 
+<div class="love-meter" title="Love meter">
+  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <path
+      d="M12 21s-6.7-4.35-9.3-8.28C.5 9.5 1.8 5.6 5.3 5c2.1-.35 3.9.9 4.7 2.4.8-1.5 2.6-2.75 4.7-2.4 3.5.6 4.8 4.5 2.6 7.72C18.7 16.65 12 21 12 21z"
+    />
+  </svg>
+  <span>{love}</span>
+</div>
+
 <div class="chat-pane">
   <div class="messages">
     {#each chatStore.messages as message}
-      {#if message.kind === "text"}
-        <MessageBubble role={message.role} content={message.content} />
-      {:else if message.tool === "get_system_info"}
-        <SystemInfoPanel data={message.data as SystemInfoData} />
-      {/if}
+      <MessageBubble role={message.role} content={message.content} sentiment={message.sentiment} />
     {/each}
     {#if chatStore.streaming}
       {#if chatStore.streamingText}
-        <MessageBubble role="assistant" content={chatStore.streamingText} />
-      {/if}
-      {#if chatStore.phaseSteps.length > 0}
-        <p class="phase-trail">
-          {#each chatStore.phaseSteps as step, i}
-            {@const isActive = i === chatStore.phaseSteps.length - 1}
-            <span
-              class="phase-icon"
-              class:active={isActive}
-              title={step.toolName ?? step.phase}
-            >
-              <PhaseIcon phase={step.phase} />
-              {#if !isActive}
-                <span class="phase-check">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="3"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M5 13l4 4L19 7" />
-                  </svg>
-                </span>
-              {/if}
-            </span>
-          {/each}
-        </p>
+        <MessageBubble
+          role="assistant"
+          content={chatStore.streamingText}
+          sentiment={chatStore.sentiment}
+        />
+      {:else if chatStore.phase}
+        <span class="phase-icon" title={chatStore.phase}>
+          <PhaseIcon phase={chatStore.phase} />
+        </span>
       {/if}
     {/if}
   </div>
@@ -78,6 +71,27 @@
 </div>
 
 <style>
+  .love-meter {
+    position: fixed;
+    top: 0.6rem;
+    right: 0.6rem;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .love-meter svg {
+    width: 1rem;
+    height: 1rem;
+    color: #e0759a;
+  }
   .chat-pane {
     display: flex;
     flex-direction: column;
@@ -124,46 +138,14 @@
     color: var(--danger);
     font-size: 0.9rem;
   }
-  .phase-trail {
-    align-self: flex-start;
-    padding: 0.6rem 0.9rem;
-    margin: 0;
-    display: flex;
-    gap: 0.4rem;
-  }
   .phase-icon {
-    position: relative;
+    align-self: flex-start;
     display: flex;
+    padding: 0.6rem 0.9rem;
     color: var(--text-muted);
-    opacity: 0.85;
-    animation: phase-pop 0.25s ease-out;
-  }
-  .phase-icon:not(.active) {
-    color: var(--success);
-  }
-  .phase-icon.active {
     animation:
       phase-pop 0.25s ease-out,
-      phase-wobble 1.4s ease-in-out 0.25s infinite,
-      phase-pulse 2.8s ease-in-out 0.25s infinite;
-  }
-  .phase-check {
-    position: absolute;
-    bottom: -0.15rem;
-    right: -0.35rem;
-    width: 0.9rem;
-    height: 0.9rem;
-    border-radius: 999px;
-    background: var(--bg);
-    color: var(--success);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: phase-check-pop 0.2s ease-out;
-  }
-  .phase-check svg {
-    width: 0.65rem;
-    height: 0.65rem;
+      phase-pulse 2s ease-in-out infinite;
   }
   @keyframes phase-pop {
     from {
@@ -173,25 +155,6 @@
     to {
       opacity: 0.85;
       transform: scale(1);
-    }
-  }
-  @keyframes phase-check-pop {
-    from {
-      opacity: 0;
-      transform: scale(0.5);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  @keyframes phase-wobble {
-    0%,
-    100% {
-      transform: rotate(-8deg);
-    }
-    50% {
-      transform: rotate(8deg);
     }
   }
   @keyframes phase-pulse {

@@ -19,6 +19,9 @@
       traits: { formality: 0.5, humor: 0.5, verbosity: 0.5, proactivity: 0.5 },
       sprite_sheet: null,
       is_builtin: false,
+      likes: "",
+      dislikes: "",
+      love: 0,
     };
   }
 
@@ -28,7 +31,10 @@
   }
 
   function startEdit(persona: Persona) {
-    draft = structuredClone(persona);
+    // persona here is a reactive $state proxy (from personaStore.personas) —
+    // structuredClone() can throw DataCloneError on those. $state.snapshot()
+    // is Svelte 5's own way to get a plain, already-disconnected copy.
+    draft = $state.snapshot(persona);
     isNewDraft = false;
   }
 
@@ -82,6 +88,7 @@
             {#if persona.is_builtin}
               <span class="badge subtle">Built-in</span>
             {/if}
+            <span class="badge love" title="Love meter">♥ {persona.love}</span>
           </div>
           <p class="persona-description">{persona.description}</p>
         </div>
@@ -126,6 +133,28 @@
         System prompt
         <textarea bind:value={draft.system_prompt} rows="3"></textarea>
       </label>
+
+      <label>
+        I respond positively to:
+        <textarea
+          bind:value={draft.likes}
+          rows="2"
+          placeholder="e.g. compliments, curiosity, being told a good joke"
+        ></textarea>
+      </label>
+
+      <label>
+        I respond negatively to:
+        <textarea
+          bind:value={draft.dislikes}
+          rows="2"
+          placeholder="e.g. rudeness, being told they're useless"
+        ></textarea>
+      </label>
+      <p class="hint">
+        Leave both blank to skip the love meter entirely for this persona — messages won't be
+        judged and no extra time is spent classifying them.
+      </p>
 
       <div class="traits">
         {#each TRAIT_LABELS as { key, label }}
@@ -205,6 +234,16 @@
   }
   .badge.subtle {
     background: var(--text-muted);
+  }
+  .badge.love {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .hint {
+    margin: -0.4rem 0 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
   }
   .persona-description {
     margin: 0.2rem 0 0;

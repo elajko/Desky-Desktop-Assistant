@@ -101,7 +101,6 @@ mod tests {
     use crate::config::Settings;
     use crate::llm::chat_loop::{new_conversation, run_chat_turn};
     use crate::llm::process::LlmProcess;
-    use crate::tools::ToolRegistry;
     use std::path::PathBuf;
 
     #[test]
@@ -149,7 +148,6 @@ mod tests {
             .ensure_running(&settings)
             .await
             .expect("llama-server should start");
-        let tools = ToolRegistry::new();
 
         let question = "My code won't compile. What do I do?";
 
@@ -160,18 +158,10 @@ mod tests {
                 persona.name,
                 persona.compose_system_prompt()
             );
-            run_chat_turn(
-                port,
-                &mut history,
-                &tools,
-                question.to_string(),
-                |_| {},
-                |_| {},
-                |segment| println!("REPLY: {segment}"),
-                |tool, data| println!("PANEL ({tool}): {data:#}"),
-            )
-            .await
-            .expect("chat turn should succeed");
+            let reply = run_chat_turn(port, &mut history, question.to_string(), |_| {})
+                .await
+                .expect("chat turn should succeed");
+            println!("REPLY: {reply}");
         }
 
         llm.shutdown().await;

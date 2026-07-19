@@ -2,7 +2,6 @@ use crate::config::Settings;
 use crate::llm::client::ChatMessage;
 use crate::llm::process::LlmProcess;
 use crate::persona::PersonaStore;
-use crate::tools::ToolRegistry;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -15,7 +14,6 @@ pub struct AppState {
     pub llm: Arc<Mutex<LlmProcess>>,
     pub history: Arc<Mutex<Vec<ChatMessage>>>,
     pub settings: Arc<Mutex<Settings>>,
-    pub tools: ToolRegistry,
     pub personas: PersonaStore,
     pub app_data_dir: PathBuf,
 }
@@ -38,7 +36,6 @@ impl AppState {
                 &system_prompt,
             ))),
             settings: Arc::new(Mutex::new(settings)),
-            tools: ToolRegistry::new(),
             personas,
             app_data_dir,
         }

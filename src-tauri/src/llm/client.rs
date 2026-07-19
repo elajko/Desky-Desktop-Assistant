@@ -1,17 +1,10 @@
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCallRequest>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_call_id: Option<String>,
+    pub content: String,
 }
 
 impl ChatMessage {
@@ -27,97 +20,19 @@ impl ChatMessage {
         Self::plain("assistant", text)
     }
 
-    /// An assistant turn that requested tool calls, optionally with text the
-    /// model produced before/alongside the request (e.g. "let me check...").
-    /// Mirrors the real OpenAI wire shape, which allows content and
-    /// tool_calls on the same message.
-    pub fn assistant_tool_calls(content: Option<String>, calls: Vec<ToolCall>) -> Self {
-        Self {
-            role: "assistant".to_string(),
-            content,
-            tool_calls: Some(
-                calls
-                    .into_iter()
-                    .map(|c| ToolCallRequest {
-                        id: c.id,
-                        kind: "function".to_string(),
-                        function: FunctionCall {
-                            name: c.name,
-                            arguments: c.arguments,
-                        },
-                    })
-                    .collect(),
-            ),
-            tool_call_id: None,
-        }
-    }
-
-    pub fn tool_result(tool_call_id: String, content: String) -> Self {
-        Self {
-            role: "tool".to_string(),
-            content: Some(content),
-            tool_calls: None,
-            tool_call_id: Some(tool_call_id),
-        }
-    }
-
     fn plain(role: &str, text: impl Into<String>) -> Self {
         Self {
             role: role.to_string(),
-            content: Some(text.into()),
-            tool_calls: None,
-            tool_call_id: None,
+            content: text.into(),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCallRequest {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub function: FunctionCall,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionCall {
-    pub name: String,
-    pub arguments: String,
-}
-
-/// A fully-assembled tool call as requested by the model, ready to dispatch.
-#[derive(Debug, Clone)]
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub arguments: String,
-}
-
-/// What a single streamed completion produced. A response can contain both:
-/// text (e.g. "let me check that for you...") and a request to call tools,
-/// in the same completion.
-pub struct StreamResult {
-    pub content: String,
-    pub tool_calls: Vec<ToolCall>,
 }
 
 #[derive(Debug, Serialize)]
 struct ChatCompletionRequest<'a> {
     messages: &'a [ChatMessage],
     stream: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tools: Option<&'a [Value]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tool_choice: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
 }
-
-// Small local models are noticeably more consistent about actually invoking
-// a tool (rather than narrating "let me check..." or guessing) at lower
-// sampling temperatures. Only applied to turns where tools are offered, so
-// plain conversation keeps the model's normal, more expressive temperature.
-const TOOL_CALL_TEMPERATURE: f32 = 0.2;
 
 #[derive(Debug, Deserialize)]
 struct StreamChunk {
@@ -133,56 +48,21 @@ struct StreamChoice {
 struct StreamDelta {
     #[serde(default)]
     content: Option<String>,
-    #[serde(default)]
-    tool_calls: Option<Vec<StreamToolCallDelta>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamToolCallDelta {
-    index: usize,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    function: Option<StreamFunctionDelta>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct StreamFunctionDelta {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    arguments: Option<String>,
-}
-
-#[derive(Default)]
-struct PartialToolCall {
-    id: String,
-    name: String,
-    arguments: String,
 }
 
 /// Streams a chat completion from llama-server's OpenAI-compatible endpoint.
-/// Calls `on_delta` for every incremental piece of assistant *text* as it
-/// arrives (tool-call argument fragments are not forwarded to it). Returns
-/// both the accumulated text (may be empty) and any tool calls requested.
+/// Calls `on_delta` for every incremental piece of assistant text as it
+/// arrives. Returns the fully accumulated reply text.
 pub async fn stream_chat(
     port: u16,
     messages: &[ChatMessage],
-    tools: &[Value],
     mut on_delta: impl FnMut(&str),
-) -> anyhow::Result<StreamResult> {
+) -> anyhow::Result<String> {
     let url = format!("http://127.0.0.1:{port}/v1/chat/completions");
     let client = reqwest::Client::new();
     let body = ChatCompletionRequest {
         messages,
         stream: true,
-        tools: if tools.is_empty() { None } else { Some(tools) },
-        tool_choice: if tools.is_empty() { None } else { Some("auto") },
-        temperature: if tools.is_empty() {
-            None
-        } else {
-            Some(TOOL_CALL_TEMPERATURE)
-        },
     };
 
     let response = client.post(&url).json(&body).send().await?;
@@ -193,7 +73,6 @@ pub async fn stream_chat(
     }
 
     let mut content_acc = String::new();
-    let mut tool_calls_acc: BTreeMap<usize, PartialToolCall> = BTreeMap::new();
     let mut buffer = String::new();
     let mut byte_stream = response.bytes_stream();
 
@@ -225,38 +104,9 @@ pub async fn stream_chat(
                         on_delta(&content);
                     }
                 }
-
-                if let Some(deltas) = choice.delta.tool_calls {
-                    for delta in deltas {
-                        let entry = tool_calls_acc.entry(delta.index).or_default();
-                        if let Some(id) = delta.id {
-                            entry.id = id;
-                        }
-                        if let Some(function) = delta.function {
-                            if let Some(name) = function.name {
-                                entry.name.push_str(&name);
-                            }
-                            if let Some(arguments) = function.arguments {
-                                entry.arguments.push_str(&arguments);
-                            }
-                        }
-                    }
-                }
             }
         }
     }
 
-    let tool_calls = tool_calls_acc
-        .into_values()
-        .map(|p| ToolCall {
-            id: p.id,
-            name: p.name,
-            arguments: p.arguments,
-        })
-        .collect();
-
-    Ok(StreamResult {
-        content: content_acc,
-        tool_calls,
-    })
+    Ok(content_acc)
 }

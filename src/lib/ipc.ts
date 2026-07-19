@@ -26,6 +26,12 @@ export interface Persona {
   // or rendered anywhere yet.
   sprite_sheet: string | null;
   is_builtin: boolean;
+  // Free-text love-meter config: what this persona responds positively/
+  // negatively to. Empty means "don't judge messages at all."
+  likes: string;
+  dislikes: string;
+  // Unbounded in both directions, persisted per-persona.
+  love: number;
 }
 
 export type LlmStatus =
@@ -34,30 +40,14 @@ export type LlmStatus =
   | { state: "ready" }
   | { state: "crashed"; message: string };
 
-export interface DiskInfo {
-  mount_point: string;
-  total_bytes: number;
-  available_bytes: number;
+export type Sentiment = "liked" | "disliked" | "neutral";
+
+export interface ChatSentimentEvent {
+  sentiment: Sentiment;
+  love: number;
 }
 
-export interface SystemInfoData {
-  os_name: string;
-  os_version: string;
-  kernel_version: string;
-  host_name: string;
-  cpu_brand: string;
-  cpu_count: number;
-  total_memory_bytes: number;
-  used_memory_bytes: number;
-  disks: DiskInfo[];
-}
-
-export interface ChatPanelEvent {
-  tool: string;
-  data: unknown;
-}
-
-export function sendChatMessage(message: string): Promise<void> {
+export function sendChatMessage(message: string): Promise<string> {
   return invoke("send_chat_message", { message });
 }
 
@@ -81,12 +71,10 @@ export function onChatStatus(callback: (status: string) => void): Promise<Unlist
   return listen<string>("chat-status", (event) => callback(event.payload));
 }
 
-export function onChatMessageComplete(callback: (segment: string) => void): Promise<UnlistenFn> {
-  return listen<string>("chat-message-complete", (event) => callback(event.payload));
-}
-
-export function onChatPanel(callback: (panel: ChatPanelEvent) => void): Promise<UnlistenFn> {
-  return listen<ChatPanelEvent>("chat-panel", (event) => callback(event.payload));
+export function onChatSentiment(
+  callback: (event: ChatSentimentEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<ChatSentimentEvent>("chat-sentiment", (event) => callback(event.payload));
 }
 
 export function listPersonas(): Promise<Persona[]> {

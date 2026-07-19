@@ -29,6 +29,8 @@
     --border: #4a4a4a;
     --danger: #e0554a;
     --success: #4caf50;
+    --liked-bg: #5c2f42;
+    --disliked-bg: #2a3b52;
 
     color: var(--text);
     background-color: var(--bg);

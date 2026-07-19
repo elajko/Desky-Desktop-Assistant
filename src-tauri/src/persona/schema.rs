@@ -36,19 +36,25 @@ pub struct Persona {
     /// default" option in the UI). Built-ins are still fully editable and
     /// deletable like any other persona — this only gates that one action.
     pub is_builtin: bool,
+    /// Free-text description of what this persona responds positively/
+    /// negatively to, used by `llm::sentiment::classify_message` to judge
+    /// each incoming message for the love meter. Empty means "don't judge" —
+    /// see that module for why.
+    #[serde(default)]
+    pub likes: String,
+    #[serde(default)]
+    pub dislikes: String,
+    /// The love meter — unbounded in both directions, +1/-1 per classified
+    /// message (liked/disliked), unchanged on neutral. Persisted per-persona
+    /// so each character keeps its own running affection score.
+    #[serde(default)]
+    pub love: i32,
 }
-
-// Applies regardless of persona customization: the model can look things up
-// and preview a file-organizing plan, but it can never delete files, and
-// file moves only happen after the user explicitly confirms in the app UI.
-const SAFETY_FOOTER: &str = "You can call tools to inspect the system and preview file \
-    organization, but you can never delete files, and file moves only happen after the \
-    user explicitly confirms in the app UI — you cannot apply them yourself.";
 
 impl Persona {
     /// Builds the actual system prompt sent to the model: the persona's own
     /// prompt, plus natural-language modifiers derived from its trait
-    /// sliders, plus the fixed safety footer every persona carries.
+    /// sliders.
     pub fn compose_system_prompt(&self) -> String {
         let mut modifiers: Vec<&str> = Vec::new();
 
@@ -81,8 +87,6 @@ impl Persona {
             prompt.push(' ');
             prompt.push_str(&modifiers.join(" "));
         }
-        prompt.push(' ');
-        prompt.push_str(SAFETY_FOOTER);
         prompt
     }
 }
@@ -100,6 +104,9 @@ mod tests {
             traits,
             sprite_sheet: None,
             is_builtin: false,
+            likes: String::new(),
+            dislikes: String::new(),
+            love: 0,
         }
     }
 
@@ -115,10 +122,6 @@ mod tests {
 
         assert!(prompt.contains("humor"), "expected a humor modifier: {prompt}");
         assert!(prompt.contains("brief"), "expected a brevity modifier: {prompt}");
-        assert!(
-            prompt.contains("never delete files"),
-            "expected the safety footer: {prompt}"
-        );
     }
 
     #[test]
@@ -143,7 +146,7 @@ mod tests {
     fn neutral_traits_add_no_modifiers() {
         let persona = persona_with_traits(PersonaTraits::default());
         let prompt = persona.compose_system_prompt();
-        // Just the base prompt + safety footer, no trait modifier sentences.
-        assert_eq!(prompt, format!("{} {}", persona.system_prompt, SAFETY_FOOTER));
+        // Just the base prompt as-is, no trait modifier sentences.
+        assert_eq!(prompt, persona.system_prompt);
     }
 }
