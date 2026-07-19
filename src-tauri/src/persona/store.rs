@@ -152,7 +152,8 @@ mod tests {
         let question = "My code won't compile. What do I do?";
 
         for persona in [&concise, &snarky] {
-            let mut history = new_conversation(&persona.compose_system_prompt());
+            let mut history =
+                new_conversation(&persona.compose_system_prompt(), &persona.first_message);
             println!(
                 "\n=== PERSONA: {} ===\nSYSTEM PROMPT: {}",
                 persona.name,

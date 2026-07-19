@@ -9,29 +9,31 @@ export interface Settings {
   active_persona_id: string | null;
 }
 
-export interface PersonaTraits {
-  formality: number;
-  humor: number;
-  verbosity: number;
-  proactivity: number;
-}
+// Recommended cap for example_dialogue/first_message — enforced via the
+// textareas' maxlength in the Persona editor (single-user local app, no
+// server-side validation needed).
+export const SHORT_FIELD_MAX_LEN = 280;
 
 export interface Persona {
   id: string;
   name: string;
   description: string;
   system_prompt: string;
-  traits: PersonaTraits;
   // Placeholder for the future avatar system (spritesheet-based) — not read
   // or rendered anywhere yet.
   sprite_sheet: string | null;
   is_builtin: boolean;
-  // Free-text love-meter config: what this persona responds positively/
-  // negatively to. Empty means "don't judge messages at all."
-  likes: string;
-  dislikes: string;
   // Unbounded in both directions, persisted per-persona.
   love: number;
+  // A short sample of how this persona actually talks — shown to the model
+  // as a style reference, and also the source the love meter's sentiment
+  // classifier reasons from to judge incoming messages. A good example
+  // should show the character reacting to something they like or dislike,
+  // not just neutral small talk. Empty means "don't judge" for the love
+  // meter.
+  example_dialogue: string;
+  // What the persona says first, before the user sends anything.
+  first_message: string;
 }
 
 export type LlmStatus =

@@ -54,6 +54,22 @@ class ChatStore {
     }
   }
 
+  // Clears the displayed conversation, mirroring the backend's own history
+  // reset whenever the active persona changes/is edited/is reset — seeds
+  // the new persona's greeting if it has one, so the two stay in sync.
+  resetConversation(firstMessage?: string) {
+    this.messages = firstMessage?.trim()
+      ? [{ role: "assistant", content: firstMessage }]
+      : [];
+    this.#stopReveal();
+    this.streaming = false;
+    this.streamingText = "";
+    this.#revealTarget = "";
+    this.phase = null;
+    this.sentiment = undefined;
+    this.error = null;
+  }
+
   async send(userText: string) {
     if (!userText.trim() || this.streaming) return;
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { personaStore } from "../stores/persona.svelte";
-  import type { Persona } from "../ipc";
+  import { SHORT_FIELD_MAX_LEN, type Persona } from "../ipc";
 
   onMount(() => {
     if (!personaStore.loaded) personaStore.load();
@@ -16,12 +16,11 @@
       name: "",
       description: "",
       system_prompt: "You are Desky, a local desktop assistant.",
-      traits: { formality: 0.5, humor: 0.5, verbosity: 0.5, proactivity: 0.5 },
       sprite_sheet: null,
       is_builtin: false,
-      likes: "",
-      dislikes: "",
       love: 0,
+      example_dialogue: "",
+      first_message: "",
     };
   }
 
@@ -57,13 +56,6 @@
     await personaStore.resetToDefault(id);
     if (draft?.id === id) draft = null;
   }
-
-  const TRAIT_LABELS: { key: keyof Persona["traits"]; label: string }[] = [
-    { key: "formality", label: "Formality" },
-    { key: "humor", label: "Humor" },
-    { key: "verbosity", label: "Verbosity" },
-    { key: "proactivity", label: "Proactivity" },
-  ];
 </script>
 
 <div class="persona-view">
@@ -130,41 +122,46 @@
       </label>
 
       <label>
+        Introduction message
+        <p class="section-tip">What they say first, before you've sent anything.</p>
+        <textarea
+          bind:value={draft.first_message}
+          rows="2"
+          maxlength={SHORT_FIELD_MAX_LEN}
+          placeholder="What they say first, before you send anything — e.g. &quot;Oh! You're here. I was just about to make some tea.&quot;"
+        ></textarea>
+        <span class="char-count">{draft.first_message.length} / {SHORT_FIELD_MAX_LEN}</span>
+      </label>
+
+      <label>
         System prompt
+        <p class="section-tip">
+          The "tell" layer — who they are: identity, backstory, personality. Keep it short,
+          concrete, and specific ("stern only when someone threatens her forest" beats "stern"),
+          and write them as a real person, not an AI playing a role.
+        </p>
         <textarea bind:value={draft.system_prompt} rows="3"></textarea>
       </label>
 
       <label>
-        I respond positively to:
+        Example dialogue
+        <p class="section-tip">
+          The "show" layer — how they actually talk teaches voice better than any description.
+          Also doubles as the love meter's reference: include a line reacting to something they
+          like or dislike, or leave blank to skip the love meter entirely.
+        </p>
         <textarea
-          bind:value={draft.likes}
-          rows="2"
-          placeholder="e.g. compliments, curiosity, being told a good joke"
+          bind:value={draft.example_dialogue}
+          rows="3"
+          maxlength={SHORT_FIELD_MAX_LEN}
+          placeholder={"User: hey!\n" +
+            draft.name +
+            ": *tilts head* well hello there.\nUser: you're an idiot.\n" +
+            draft.name +
+            ": ...excuse me?"}
         ></textarea>
+        <span class="char-count">{draft.example_dialogue.length} / {SHORT_FIELD_MAX_LEN}</span>
       </label>
-
-      <label>
-        I respond negatively to:
-        <textarea
-          bind:value={draft.dislikes}
-          rows="2"
-          placeholder="e.g. rudeness, being told they're useless"
-        ></textarea>
-      </label>
-      <p class="hint">
-        Leave both blank to skip the love meter entirely for this persona — messages won't be
-        judged and no extra time is spent classifying them.
-      </p>
-
-      <div class="traits">
-        {#each TRAIT_LABELS as { key, label }}
-          <label class="trait-slider">
-            <span>{label}</span>
-            <input type="range" min="0" max="1" step="0.05" bind:value={draft.traits[key]} />
-            <span class="trait-value">{draft.traits[key].toFixed(2)}</span>
-          </label>
-        {/each}
-      </div>
 
       <div class="editor-actions">
         <button class="save-btn" onclick={saveDraft} disabled={!draft.name.trim()}>Save</button>
@@ -240,10 +237,11 @@
     border: 1px solid var(--border);
     color: var(--text-muted);
   }
-  .hint {
-    margin: -0.4rem 0 0;
+  .section-tip {
+    margin: 0;
     font-size: 0.78rem;
     color: var(--text-muted);
+    line-height: 1.4;
   }
   .persona-description {
     margin: 0.2rem 0 0;
@@ -301,21 +299,10 @@
     font-family: inherit;
     font-size: 0.9rem;
   }
-  .traits {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .trait-slider {
-    display: grid;
-    grid-template-columns: 6rem 1fr 3rem;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .trait-value {
-    text-align: right;
-    font-size: 0.8rem;
-    opacity: 0.7;
+  .char-count {
+    align-self: flex-end;
+    font-size: 0.75rem;
+    color: var(--text-muted);
   }
   .editor-actions {
     display: flex;

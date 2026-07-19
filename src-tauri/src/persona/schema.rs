@@ -1,31 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct PersonaTraits {
-    pub formality: f32,
-    pub humor: f32,
-    pub verbosity: f32,
-    pub proactivity: f32,
-}
-
-impl Default for PersonaTraits {
-    fn default() -> Self {
-        Self {
-            formality: 0.5,
-            humor: 0.5,
-            verbosity: 0.5,
-            proactivity: 0.5,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Persona {
     pub id: String,
     pub name: String,
     pub description: String,
     pub system_prompt: String,
-    pub traits: PersonaTraits,
     /// Which avatar sprite sheet this persona uses. The avatar system
     /// doesn't exist yet — nothing reads this field today — but personas
     /// are meant to own their look once it does, so the schema carries it
@@ -36,57 +16,38 @@ pub struct Persona {
     /// default" option in the UI). Built-ins are still fully editable and
     /// deletable like any other persona — this only gates that one action.
     pub is_builtin: bool,
-    /// Free-text description of what this persona responds positively/
-    /// negatively to, used by `llm::sentiment::classify_message` to judge
-    /// each incoming message for the love meter. Empty means "don't judge" —
-    /// see that module for why.
-    #[serde(default)]
-    pub likes: String,
-    #[serde(default)]
-    pub dislikes: String,
     /// The love meter — unbounded in both directions, +1/-1 per classified
     /// message (liked/disliked), unchanged on neutral. Persisted per-persona
     /// so each character keeps its own running affection score.
     #[serde(default)]
     pub love: i32,
+    /// A short sample of how this persona actually talks — shown to the
+    /// model as a style reference, and also the source `llm::sentiment::
+    /// classify_message` reasons from to judge each incoming message for
+    /// the love meter. A good example should show the character reacting
+    /// to something they like or dislike, not just neutral small talk.
+    /// Empty means "don't judge" for the love meter (see that module).
+    #[serde(default)]
+    pub example_dialogue: String,
+    /// What the persona says first, before the user sends anything —
+    /// seeded directly into the conversation rather than generated.
+    #[serde(default)]
+    pub first_message: String,
 }
 
 impl Persona {
     /// Builds the actual system prompt sent to the model: the persona's own
-    /// prompt, plus natural-language modifiers derived from its trait
-    /// sliders.
+    /// prompt, plus its example dialogue (if any) as a style reference.
     pub fn compose_system_prompt(&self) -> String {
-        let mut modifiers: Vec<&str> = Vec::new();
-
-        if self.traits.formality > 0.65 {
-            modifiers.push("Speak formally and professionally.");
-        } else if self.traits.formality < 0.35 {
-            modifiers.push("Speak casually, like a friend.");
-        }
-
-        if self.traits.humor > 0.65 {
-            modifiers.push("Feel free to use humor and playful phrasing.");
-        } else if self.traits.humor < 0.35 {
-            modifiers.push("Keep a serious, matter-of-fact tone.");
-        }
-
-        if self.traits.verbosity < 0.35 {
-            modifiers.push("Keep responses brief — a sentence or two unless asked for detail.");
-        } else if self.traits.verbosity > 0.65 {
-            modifiers.push("Feel free to elaborate and give thorough, detailed answers.");
-        }
-
-        if self.traits.proactivity > 0.65 {
-            modifiers.push("Proactively suggest relevant follow-up actions or information.");
-        } else if self.traits.proactivity < 0.35 {
-            modifiers.push("Answer only what's asked — don't volunteer extra suggestions.");
-        }
-
         let mut prompt = self.system_prompt.trim().to_string();
-        if !modifiers.is_empty() {
-            prompt.push(' ');
-            prompt.push_str(&modifiers.join(" "));
+
+        let example = self.example_dialogue.trim();
+        if !example.is_empty() {
+            prompt.push_str("\n\nHere's an example of how you talk:\n");
+            prompt.push_str(example);
+            prompt.push_str("\n\nMatch this voice and style.");
         }
+
         prompt
     }
 }
@@ -95,58 +56,40 @@ impl Persona {
 mod tests {
     use super::*;
 
-    fn persona_with_traits(traits: PersonaTraits) -> Persona {
+    fn test_persona(system_prompt: &str, example_dialogue: &str) -> Persona {
         Persona {
             id: "test".to_string(),
             name: "Test".to_string(),
             description: String::new(),
-            system_prompt: "You are Desky.".to_string(),
-            traits,
+            system_prompt: system_prompt.to_string(),
             sprite_sheet: None,
             is_builtin: false,
-            likes: String::new(),
-            dislikes: String::new(),
             love: 0,
+            example_dialogue: example_dialogue.to_string(),
+            first_message: String::new(),
         }
     }
 
     #[test]
-    fn high_humor_low_verbosity_adds_expected_modifiers() {
-        let persona = persona_with_traits(PersonaTraits {
-            formality: 0.5,
-            humor: 0.9,
-            verbosity: 0.1,
-            proactivity: 0.5,
-        });
-        let prompt = persona.compose_system_prompt();
-
-        assert!(prompt.contains("humor"), "expected a humor modifier: {prompt}");
-        assert!(prompt.contains("brief"), "expected a brevity modifier: {prompt}");
+    fn no_example_dialogue_is_just_the_base_prompt() {
+        let persona = test_persona("You are Test.", "");
+        assert_eq!(persona.compose_system_prompt(), "You are Test.");
     }
 
     #[test]
-    fn different_traits_produce_different_prompts() {
-        let concise = persona_with_traits(PersonaTraits {
-            formality: 0.5,
-            humor: 0.1,
-            verbosity: 0.1,
-            proactivity: 0.3,
-        });
-        let snarky = persona_with_traits(PersonaTraits {
-            formality: 0.1,
-            humor: 0.9,
-            verbosity: 0.4,
-            proactivity: 0.4,
-        });
+    fn example_dialogue_gets_folded_in_with_instruction() {
+        let persona = test_persona("You are Test.", "User: hi\nTest: heya!");
+        let prompt = persona.compose_system_prompt();
 
-        assert_ne!(concise.compose_system_prompt(), snarky.compose_system_prompt());
+        assert!(prompt.contains("You are Test."));
+        assert!(prompt.contains("User: hi\nTest: heya!"));
+        assert!(prompt.contains("Match this voice and style"));
     }
 
     #[test]
-    fn neutral_traits_add_no_modifiers() {
-        let persona = persona_with_traits(PersonaTraits::default());
-        let prompt = persona.compose_system_prompt();
-        // Just the base prompt as-is, no trait modifier sentences.
-        assert_eq!(prompt, persona.system_prompt);
+    fn different_example_dialogue_produces_different_prompts() {
+        let a = test_persona("You are Test.", "Test: sup.");
+        let b = test_persona("You are Test.", "Test: Good day to you, friend.");
+        assert_ne!(a.compose_system_prompt(), b.compose_system_prompt());
     }
 }

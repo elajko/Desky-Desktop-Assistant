@@ -113,8 +113,10 @@ pub async fn delete_persona(state: State<'_, AppState>, id: String) -> Result<()
                 settings.active_persona_id = Some(fallback.id.clone());
                 settings.save(&state.app_data_dir).map_err(|e| e.to_string())?;
             }
-            *state.history.lock().await =
-                crate::llm::chat_loop::new_conversation(&fallback.compose_system_prompt());
+            *state.history.lock().await = crate::llm::chat_loop::new_conversation(
+                &fallback.compose_system_prompt(),
+                &fallback.first_message,
+            );
         }
     }
 
@@ -139,6 +141,7 @@ pub async fn set_active_persona(state: State<'_, AppState>, id: String) -> Resul
 
     *state.history.lock().await = crate::llm::chat_loop::new_conversation(
         &persona.compose_system_prompt(),
+        &persona.first_message,
     );
 
     Ok(())
@@ -162,7 +165,9 @@ pub async fn reset_persona(state: State<'_, AppState>, id: String) -> Result<Per
 async fn reset_history_if_active(state: &State<'_, AppState>, id: &str, persona: &Persona) {
     let is_active = state.settings.lock().await.active_persona_id.as_deref() == Some(id);
     if is_active {
-        *state.history.lock().await =
-            crate::llm::chat_loop::new_conversation(&persona.compose_system_prompt());
+        *state.history.lock().await = crate::llm::chat_loop::new_conversation(
+            &persona.compose_system_prompt(),
+            &persona.first_message,
+        );
     }
 }

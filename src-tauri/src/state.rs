@@ -23,17 +23,24 @@ impl AppState {
         let settings = Settings::load(&app_data_dir);
         let personas = PersonaStore::new(&app_data_dir);
 
-        let system_prompt = personas
+        let active_persona = personas
             .resolve_active(settings.active_persona_id.as_deref())
             .ok()
-            .flatten()
+            .flatten();
+        let system_prompt = active_persona
+            .as_ref()
             .map(|p| p.compose_system_prompt())
             .unwrap_or_else(|| FALLBACK_SYSTEM_PROMPT.to_string());
+        let first_message = active_persona
+            .as_ref()
+            .map(|p| p.first_message.as_str())
+            .unwrap_or("");
 
         Self {
             llm: Arc::new(Mutex::new(LlmProcess::default())),
             history: Arc::new(Mutex::new(crate::llm::chat_loop::new_conversation(
                 &system_prompt,
+                first_message,
             ))),
             settings: Arc::new(Mutex::new(settings)),
             personas,

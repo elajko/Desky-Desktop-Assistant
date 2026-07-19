@@ -30,42 +30,27 @@ impl Sentiment {
     }
 }
 
-/// Asks the model whether `message` aligns with what `persona` likes or
-/// dislikes (both free-text, configured in the Persona editor). Skips the
-/// LLM call entirely — always Neutral — if neither field is configured, so
-/// personas without a love-meter setup pay no extra latency for this.
+/// Asks the model whether `message` would please or annoy `persona`, judging
+/// by how they react to things in their own `example_dialogue`. Skips the
+/// LLM call entirely — always Neutral — if there's no example dialogue to
+/// reason from, so personas without one pay no extra latency for this.
 pub async fn classify_message(
     port: u16,
     persona: &Persona,
     message: &str,
 ) -> anyhow::Result<Sentiment> {
-    let likes = persona.likes.trim();
-    let dislikes = persona.dislikes.trim();
-    if likes.is_empty() && dislikes.is_empty() {
+    let example = persona.example_dialogue.trim();
+    if example.is_empty() {
         return Ok(Sentiment::Neutral);
     }
 
-    let mut instructions = format!(
-        "You are judging whether a single message aligns with what {} likes or dislikes, \
-         for an affection meter in a chat app. ",
-        persona.name
-    );
-    if !likes.is_empty() {
-        instructions.push_str(&format!(
-            "{} responds positively to: {}. ",
-            persona.name, likes
-        ));
-    }
-    if !dislikes.is_empty() {
-        instructions.push_str(&format!(
-            "{} responds negatively to: {}. ",
-            persona.name, dislikes
-        ));
-    }
-    instructions.push_str(
-        "Read the user's message below and decide: does it align with what they like, what \
-         they dislike, or neither? Respond with exactly one word: LIKE, DISLIKE, or NEUTRAL \
-         — nothing else.",
+    let instructions = format!(
+        "You are judging whether a single message would please or annoy {}, for an affection \
+         meter in a chat app. Here's an example of how {} talks and reacts to things:\n{}\n\n\
+         Read the user's message below and decide, based on {}'s personality and reactions \
+         shown above: would it please them, annoy them, or neither? Respond with exactly one \
+         word: LIKE, DISLIKE, or NEUTRAL — nothing else.",
+        persona.name, persona.name, example, persona.name
     );
 
     let messages = vec![
@@ -90,21 +75,19 @@ mod tests {
     use super::*;
     use crate::config::Settings;
     use crate::llm::process::LlmProcess;
-    use crate::persona::schema::PersonaTraits;
     use std::path::PathBuf;
 
-    fn test_persona(likes: &str, dislikes: &str) -> Persona {
+    fn test_persona(example_dialogue: &str) -> Persona {
         Persona {
             id: "test".to_string(),
             name: "TestBot".to_string(),
             description: String::new(),
             system_prompt: "You are TestBot.".to_string(),
-            traits: PersonaTraits::default(),
             sprite_sheet: None,
             is_builtin: false,
-            likes: likes.to_string(),
-            dislikes: dislikes.to_string(),
             love: 0,
+            example_dialogue: example_dialogue.to_string(),
+            first_message: String::new(),
         }
     }
 
@@ -113,7 +96,7 @@ mod tests {
         // No async runtime needed at all if this really short-circuits —
         // proven by the fact this plain #[test] (not #[tokio::test]) can
         // still .await it via a minimal blocking runtime.
-        let persona = test_persona("", "");
+        let persona = test_persona("");
         let result = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap()
@@ -146,8 +129,10 @@ mod tests {
             .expect("llama-server should start");
 
         let persona = test_persona(
-            "compliments, kindness, and being told they're a good assistant",
-            "insults, rudeness, and being told they're useless",
+            "User: You're such a great assistant, thank you!\n\
+             TestBot: Aw, shucks — comments like that make my whole day!\n\
+             User: You're useless and I hate talking to you.\n\
+             TestBot: Well, that's just rude. I'm trying my best here.",
         );
 
         let liked = classify_message(port, &persona, "You're such a great assistant, thank you!")

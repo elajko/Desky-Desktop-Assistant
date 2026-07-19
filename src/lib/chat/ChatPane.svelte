@@ -7,8 +7,17 @@
   import PhaseIcon from "./PhaseIcon.svelte";
   import AvatarStage from "../avatar/AvatarStage.svelte";
 
-  onMount(() => {
-    if (!personaStore.loaded) personaStore.load();
+  onMount(async () => {
+    if (!personaStore.loaded) await personaStore.load();
+    // First-ever launch (or a fresh install): seed the active persona's
+    // greeting, mirroring what the backend already seeds into its own
+    // history on startup.
+    if (chatStore.messages.length === 0) {
+      const persona = personaStore.personas.find((p) => p.id === personaStore.activeId);
+      if (persona?.first_message.trim()) {
+        chatStore.resetConversation(persona.first_message);
+      }
+    }
   });
 
   let love = $derived(
